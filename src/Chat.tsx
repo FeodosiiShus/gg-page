@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { GoogleGenAI } from "@google/genai";
+import hljs from "highlight.js";
+import "highlight.js/styles/github.css"; // Выберите стиль подсветки
 
 const Chat: React.FC = () => {
     const [question, setQuestion] = useState("");
@@ -84,11 +86,16 @@ const Chat: React.FC = () => {
 
     const formatResponse = (response: string): string => {
         const formatted = response
-            .replace(/```([\s\S]*?)```/g, '<pre style="background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.9rem;"><code>$1</code></pre>') // Блоки кода
-            .replace(/\n/g, '<br />') // Переносы строк
+            .replace(/```([\s\S]*?)```/g, (match, code) => {
+                const highlightedCode = hljs.highlightAuto(code).value;
+                return `<pre style="background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.9rem;"><code>${highlightedCode}</code></pre>`;
+            }) // Блоки кода с подсветкой
+            .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") // Жирный текст
+            .replace(/_(.*?)_/g, "<em>$1</em>") // Курсив
+            .replace(/\n/g, "<br />") // Переносы строк
             .replace(/(#+)\s(.+)/g, (match, hashes, text) => {
                 const level = hashes.length;
-                return `<h${level} style="margin: 10px 0; font-size: ${1.5 - 0.2 * level}rem;">${text}</h${level}>`;
+                return `<h${level} style="margin: 10px 0; font-size: ${1.5 - 0.2 * level}rem; font-weight: bold;">${text}</h${level}>`;
             }); // Заголовки
         return formatted;
     };
@@ -190,6 +197,7 @@ const Chat: React.FC = () => {
                                 whiteSpace: "pre-wrap",
                                 color: "#555",
                                 lineHeight: "1.5",
+                                fontSize: "1rem", // Единообразный размер шрифта
                             }}
                         >
                             {item.question}
@@ -211,7 +219,8 @@ const Chat: React.FC = () => {
                             style={{
                                 color: "#555",
                                 lineHeight: "1.5",
-                                overflowWrap: "break-word", // Перенос длинных строк
+                                fontSize: "1rem", // Единообразный размер шрифта
+                                overflowWrap: "break-word",
                             }}
                         />
                     </div>
