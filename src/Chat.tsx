@@ -1,9 +1,12 @@
-import React, {useState} from "react";
-import {GoogleGenAI} from "@google/genai";
+import React, { useState } from "react";
+import { GoogleGenAI } from "@google/genai";
 
 const Chat: React.FC = () => {
     const [question, setQuestion] = useState("");
-    const [response, setResponse] = useState("");
+    const [history, setHistory] = useState<{ question: string; response: string }[]>(
+        []
+    );
+    const [isLoading, setIsLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -17,34 +20,77 @@ const Chat: React.FC = () => {
 
         const ai = new GoogleGenAI({ apiKey });
 
+        setIsLoading(true);
+        let timeoutId: NodeJS.Timeout;
+
         try {
-            const response = await ai.models.generateContent({
+            const context = history
+                .map((item) => `Q: ${item.question}\nA: ${item.response}`)
+                .join("\n");
+
+            const fullPrompt = context
+                ? `${context}\nQ: ${question}`
+                : `Q: ${question}`;
+
+            timeoutId = setTimeout(() => {
+                setHistory((prevHistory) => [
+                    { question, response: "Error: Response timeout exceeded (30 seconds)." },
+                    ...prevHistory,
+                ]);
+                setIsLoading(false);
+            }, 30000);
+
+            const aiResponse = await ai.models.generateContent({
                 model: "gemini-2.5-flash",
-                contents: question,
+                contents: fullPrompt,
                 config: {
                     thinkingConfig: {
-                        thinkingBudget: 0, // Disables thinking
+                        thinkingBudget: 0,
                     },
-                }
+                },
             });
 
-            if (response && response.text) {
-                setResponse(response.text.trim());
-            } else {
-                setResponse("No response text available.");
-            }
-            console.log(response);
+            clearTimeout(timeoutId);
+
+            const responseText = aiResponse?.text?.trim() || "No response text available.";
+
+            const formattedResponse = formatResponse(responseText);
+
+            setHistory((prevHistory) => [
+                { question, response: formattedResponse },
+                ...prevHistory,
+            ]);
+
+            setQuestion("");
         } catch (error) {
             console.error("Something went wrong: ", error);
-            setResponse("Something went wrong. Try again");
+            setHistory((prevHistory) => [
+                { question, response: "Error: Something went wrong. Try again." },
+                ...prevHistory,
+            ]);
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            handleSubmit(e as unknown as React.FormEvent);
+            if (!isLoading) {
+                handleSubmit(e as unknown as React.FormEvent);
+            }
         }
+    };
+
+    const formatResponse = (response: string): string => {
+        const formatted = response
+            .replace(/```([\s\S]*?)```/g, '<pre style="background: #f4f4f4; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.9rem;"><code>$1</code></pre>') // Блоки кода
+            .replace(/\n/g, '<br />') // Переносы строк
+            .replace(/(#+)\s(.+)/g, (match, hashes, text) => {
+                const level = hashes.length;
+                return `<h${level} style="margin: 10px 0; font-size: ${1.5 - 0.2 * level}rem;">${text}</h${level}>`;
+            }); // Заголовки
+        return formatted;
     };
 
     return (
@@ -65,79 +111,112 @@ const Chat: React.FC = () => {
                 style={{
                     textAlign: "center",
                     color: "#333",
-                    fontSize: "2rem",
+                    fontSize: "1.8rem",
                 }}
             >
                 Asker
             </h1>
             <form onSubmit={handleSubmit}>
-            <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Enter your request..."
-                rows={4}
-                style={{
-                    width: "100%",
-                    marginBottom: "10px",
-                    padding: "10px",
-                    borderRadius: "4px",
-                    border: "1px solid #ccc",
-                    fontSize: "1rem",
-                    resize: "none",
-                    boxSizing: "border-box",
-                }}
-            />
+                <textarea
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Enter your request..."
+                    rows={4}
+                    disabled={isLoading}
+                    style={{
+                        width: "100%",
+                        marginBottom: "10px",
+                        padding: "10px",
+                        borderRadius: "4px",
+                        border: "1px solid #ccc",
+                        fontSize: "1rem",
+                        resize: "none",
+                        boxSizing: "border-box",
+                        backgroundColor: isLoading ? "#f0f0f0" : "#fff",
+                        cursor: isLoading ? "not-allowed" : "text",
+                    }}
+                />
                 <button
                     type="submit"
+                    disabled={isLoading}
                     style={{
                         padding: "10px 20px",
-                        backgroundColor: "#007BFF",
-                        color: "#fff",
+                        backgroundColor: isLoading ? "#ccc" : "#007BFF",
+                        color: isLoading ? "#666" : "#fff",
                         border: "none",
                         borderRadius: "4px",
-                        cursor: "pointer",
+                        cursor: isLoading ? "not-allowed" : "pointer",
                         fontSize: "1rem",
                         width: "100%",
                     }}
                 >
-                    Send
+                    {isLoading ? "Waiting..." : "Send"}
                 </button>
             </form>
-            {response && (
-                <div
-                    style={{
-                        marginTop: "20px",
-                        padding: "15px",
-                        border: "1px solid #ccc",
-                        borderRadius: "4px",
-                        backgroundColor: "#fff",
-                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
-                        fontSize: "1rem",
-                    }}
-                >
-                    <h2
+            <div
+                style={{
+                    marginTop: "20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "20px",
+                }}
+            >
+                {history.map((item, index) => (
+                    <div
+                        key={index}
                         style={{
-                            marginBottom: "10px",
-                            color: "#333",
-                            fontSize: "1.5rem",
-                            borderBottom: "1px solid #ddd",
-                            paddingBottom: "5px",
+                            padding: "15px",
+                            border: "1px solid #ccc",
+                            borderRadius: "4px",
+                            backgroundColor: "#fff",
+                            boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+                            fontSize: "0.9rem",
                         }}
                     >
-                        Response:
-                    </h2>
-                    <p
-                        style={{
-                            whiteSpace: "pre-wrap",
-                            color: "#555",
-                            lineHeight: "1.5",
-                        }}
-                    >
-                        {response}
-                    </p>
-                </div>
-            )}
+                        <h2
+                            style={{
+                                marginBottom: "10px",
+                                color: "#333",
+                                fontSize: "1.2rem",
+                                borderBottom: "1px solid #ddd",
+                                paddingBottom: "5px",
+                            }}
+                        >
+                            Question:
+                        </h2>
+                        <p
+                            style={{
+                                whiteSpace: "pre-wrap",
+                                color: "#555",
+                                lineHeight: "1.5",
+                            }}
+                        >
+                            {item.question}
+                        </p>
+                        <h2
+                            style={{
+                                marginTop: "10px",
+                                marginBottom: "10px",
+                                color: "#333",
+                                fontSize: "1.2rem",
+                                borderBottom: "1px solid #ddd",
+                                paddingBottom: "5px",
+                            }}
+                        >
+                            Response:
+                        </h2>
+                        <div
+                            dangerouslySetInnerHTML={{ __html: item.response }}
+                            style={{
+                                color: "#555",
+                                lineHeight: "1.5",
+                                overflowWrap: "break-word", // Перенос длинных строк
+                            }}
+                        />
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
